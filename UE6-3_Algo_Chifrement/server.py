@@ -38,29 +38,31 @@ class ChatServer:
         self.text_area.insert(tk.END, f"[Serveur]: {user_list}\n")
 
     def kick(self):
-        target = simpledialog.askstring("Kick", "Nom de l'utilisateur à kicker :", parent=self.root)
+        target = simpledialog.askstring("Kick", "Enter username:", parent=self.root)
         if target in self.clients:
             target_socket, target_key = self.clients[target]
-            message = "Vous êtes kick du serveur (déconnecté)"
-            encrypted_message = self.encrypt(message, target_key)
-            target_socket.send(encrypted_message.encode())
-            target_socket.close()
+            try:
+                # Encrypt kick message before sending
+                kick_msg = self.encrypt("You have been kicked.", target_key)
+                target_socket.send(kick_msg.encode())
+                target_socket.close()
+            except:
+                pass
             del self.clients[target]
-            self.text_area.insert(tk.END, f"[Serveur]: Utilisateur {target} déconnecté.\n")
+            self.text_area.insert(tk.END, f"[Server] Kicked {target}\n")
         else:
-            self.text_area.insert(tk.END, f"[Serveur]: Utilisateur {target} introuvable.\n")
+            self.text_area.insert(tk.END, f"[Server] User {target} not found.\n")
 
     def handle_client(self, client_socket, addr):
         try:
-            # AES-based key exchange (same salt as client)
+            # Key derivation with FIXED salt
             key_str = "shared_secret"
-            salt = b'fixed_salt_1234'  # Same salt as client
+            salt = b'fixed_salt_1234'  # Must match client's salt
             aes_key, _ = derive_key(key_str, salt)
 
             name = client_socket.recv(1024).decode().strip()
             self.clients[name] = (client_socket, aes_key)
-
-            self.text_area.insert(tk.END, f"[+] {name} connecté depuis {addr}\n")
+            self.text_area.insert(tk.END, f"[+] {name} connected from {addr}\n")
 
             while True:
                 encrypted_data = client_socket.recv(1024)
@@ -68,17 +70,17 @@ class ChatServer:
                     break
 
                 try:
-                    # Decrypt the received Base64 string
+                    # Decrypt the message
                     decrypted_message = self.decrypt(encrypted_data.decode(), aes_key)
                     self.text_area.insert(tk.END, f"[{name}] {decrypted_message}\n")
 
-                    # Handle commands
+                    # Handle /users command
                     if decrypted_message == "/users":
                         user_list = "Utilisateurs connectés: " + ", ".join(self.clients.keys())
                         encrypted_response = self.encrypt(user_list, aes_key)
                         client_socket.send(encrypted_response.encode())
 
-                    # Private message
+                    # Handle @private messages
                     elif decrypted_message.startswith("@"):
                         try:
                             # Split target and message (handle missing space)
@@ -97,18 +99,18 @@ class ChatServer:
                         except Exception as e:
                             self.text_area.insert(tk.END, f"[-] Private message error: {e}\n")
 
-                    # Broadcast to all clients
+                    # Broadcast messages
                     else:
-                        for client_name, (sock, client_key) in self.clients.items():
+                        for client_name, (sock, key) in self.clients.items():
                             if client_name != name:
-                                encrypted_msg = self.encrypt(f"[{name}]: {decrypted_message}", client_key)
+                                encrypted_msg = self.encrypt(f"[{name}]: {decrypted_message}", key)
                                 sock.send(encrypted_msg.encode())
 
                 except Exception as e:
-                    self.text_area.insert(tk.END, f"[-] Error decrypting from {name}: {e}\n")
+                    self.text_area.insert(tk.END, f"[-] Decryption error: {e}\n")
 
         except Exception as e:
-            self.text_area.insert(tk.END, f"[-] Erreur avec {addr}: {e}\n")
+            self.text_area.insert(tk.END, f"[-] Client error: {e}\n")
         finally:
             self.text_area.insert(tk.END, f"[-] {name} déconnecté\n")
             self.clients.pop(name, None)
