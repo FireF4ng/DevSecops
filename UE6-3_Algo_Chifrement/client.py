@@ -1,94 +1,94 @@
 import socket
-import threading
-import random
 import tkinter as tk
-from tkinter import simpledialog, scrolledtext
-from crypto import vigenere_encrypt, vigenere_decrypt, normalize_key
+import threading as tk_threading
+from tkinter import scrolledtext, simpledialog
+from crypto import aes_encrypt, aes_decrypt, derive_key
 
-P = 23
-G = 5
-
-class SecureChatClient:
-    def __init__(self, host="127.0.0.1", port=5555):
+class ChatClient:
+    def __init__(self, host="127.0.0.1", port=12345, use_aes=True):
         self.host = host
         self.port = port
+        self.use_aes = use_aes  # AES by default
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.key_str = None
-        self.name = None
 
         self.root = tk.Tk()
-        self.root.title("Chat sécurisé")
-        self.setup_ui()
+        self.root.title("Client")
 
-    def setup_ui(self):
         self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD)
         self.text_area.pack()
 
         self.input_box = tk.Entry(self.root)
         self.input_box.pack()
 
-        send_button = tk.Button(self.root, text="Envoyer", command=self.send_message)
-        send_button.pack()
+        self.send_button = tk.Button(self.root, text="Envoyer", command=self.send_message)
+        self.send_button.pack()
 
         users_button = tk.Button(self.root, text="Liste des utilisateurs", command=self.request_users)
         users_button.pack()
-
-    def diffie_hellman_private(self):
-        return random.randint(2, P - 2)
-
-    def diffie_hellman_shared(self, private_key, public_key):
-        return (public_key ** private_key) % P
 
     def connect(self):
         try:
             self.client_socket.connect((self.host, self.port))
 
-            # Diffie-Hellman Key Exchange
-            P = int(self.client_socket.recv(1024).decode())
-            G = int(self.client_socket.recv(1024).decode())
+            # AES-based key exchange (same salt as server)
+            key_str = "shared_secret"
+            salt = b'fixed_salt_1234'  # Same salt as server
+            self.aes_key, _ = derive_key(key_str, salt)
 
-            private_key = self.diffie_hellman_private()
-            public_key = (G ** private_key) % P
-            self.client_socket.send(str(public_key).encode())
+            name = simpledialog.askstring("Nom", "Entrez votre nom :", parent=self.root)
+            self.client_socket.send(name.encode())
 
-            server_public_key = int(self.client_socket.recv(1024).decode())
-            shared_key = self.diffie_hellman_shared(private_key, server_public_key)
-            self.key_str = normalize_key(shared_key)
+            self.text_area.insert(tk.END, "[+] Connecté au serveur\n")
 
-            # Get username
-            self.name = simpledialog.askstring("Nom", "Entrez votre nom :", parent=self.root)
-            self.root.title(f"Chat sécurisé - {self.name}")
-            self.client_socket.send(self.name.encode())
+            self.receive_thread = tk_threading.Thread(target=self.receive_messages, daemon=True)
+            self.receive_thread.start()
+        except Exception as e:
+            self.text_area.insert(tk.END, f"[-] Erreur de connexion : {e}\n")
 
-            threading.Thread(target=self.receive_messages, daemon=True).start()
-            self.root.mainloop()
+    def encrypt(self, message):
+        return aes_encrypt(message, self.aes_key)
 
-        finally:
-            self.client_socket.close()
+    def decrypt(self, encrypted_message):
+        return aes_decrypt(encrypted_message, self.aes_key)
 
     def send_message(self):
         message = self.input_box.get()
-        if message and self.key_str:
-            encrypted_message = vigenere_encrypt(message, self.key_str)
+        if message:
+            self.text_area.insert(tk.END, f"[Moi]: {message}\n")
+            encrypted_message = self.encrypt(message)
             self.client_socket.send(encrypted_message.encode())
-            self.text_area.insert(tk.END, f"[{self.name}]: {message}\n")
             self.input_box.delete(0, tk.END)
-
-    def request_users(self):
-        self.client_socket.send(vigenere_encrypt("/users", self.key_str).encode())
 
     def receive_messages(self):
         while True:
             try:
-                data = self.client_socket.recv(1024).decode()
-                if not data:
+                encrypted_message = self.client_socket.recv(1024).decode()
+                if not encrypted_message:
                     break
-                decrypted_message = vigenere_decrypt(data, self.key_str)
-                self.text_area.insert(tk.END, f"{decrypted_message}\n")
-            except ConnectionResetError:
-                self.text_area.insert(tk.END, "[INFO]: Connexion perdue.\n")
+
+                try:
+                    msg = self.decrypt(encrypted_message)
+                    self.text_area.insert(tk.END, msg + "\n")
+                except Exception as e:
+                    self.text_area.insert(tk.END, f"[Error] Failed to decrypt: {e}\n")
+            except Exception as e:
+                self.text_area.insert(tk.END, f"[-] Erreur de réception : {e}\n")
                 break
 
+    def request_users(self):
+        """Request the list of users from the server."""
+        encrypted_command = self.encrypt("/users")
+        self.client_socket.send(encrypted_command.encode())
+
+    def start(self):
+        self.root.protocol("WM_DELETE_WINDOW", self.close_connection)
+        self.connect()
+        self.root.mainloop()
+
+    def close_connection(self):
+        self.client_socket.close()
+        self.root.destroy()
+
 if __name__ == "__main__":
-    client = SecureChatClient()
-    client.connect()
+    client = ChatClient(use_aes=True)
+    client.start()
