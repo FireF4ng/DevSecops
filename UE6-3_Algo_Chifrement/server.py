@@ -114,7 +114,7 @@ class ChatServer:
         return aes_decrypt(encrypted_message, key)
     
     def user_list(self, aes_key, client_socket):
-        user_list = "Utilisateurs connectés: " + ", ".join(self.clients.keys())
+        user_list = "Connected Users: " + ", ".join(self.clients.keys())
         encrypted_response = self.encrypt(user_list, aes_key)
         client_socket.send(encrypted_response.encode())
 
@@ -146,6 +146,7 @@ class ChatServer:
 
     def server_send_message(self):
         message = self.input_box.get()
+        self.text_area.insert(tk.END, f"[Server]: {message}\n")
         self.broadcast(f"[Server]: {message}")
         self.input_box.delete(0, tk.END)
 

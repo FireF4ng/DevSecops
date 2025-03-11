@@ -1,4 +1,5 @@
 import socket
+import errno
 import tkinter as tk
 import threading as tk_threading
 from tkinter import scrolledtext, simpledialog
@@ -76,6 +77,7 @@ class ChatClient:
             self.receive_thread.start()
         except Exception as e:
             self.text_area.insert(tk.END, f"[-] Connection Error: {e}\n")
+            self.client_socket.close()
 
     def encrypt(self, message):
         return aes_encrypt(message, self.aes_key)
@@ -96,10 +98,15 @@ class ChatClient:
             try:
                 encrypted_message = self.client_socket.recv(1024).decode()
                 if not encrypted_message:
+                    self.text_area.insert(tk.END, f"[Info] Disconnected {e}\n")
                     break
-
                 msg = self.decrypt(encrypted_message)
                 self.text_area.insert(tk.END, msg + "\n")
+            except socket.error as e:
+                if e.errno == errno.WSAECONNRESET:  # WinError 10054
+                    self.text_area.insert(tk.END, "[Warning] Client connection forcibly closed\n")
+                    break
+                self.text_area.insert(tk.END, f"[Error] Socket error: {e}\n")
             except Exception as e:
                 self.text_area.insert(tk.END, f"[Error] Failed to decrypt: {e}\n")
 
