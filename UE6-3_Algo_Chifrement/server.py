@@ -65,18 +65,20 @@ class ChatServer:
 
             # Receive client's public key and compute shared secret
             client_public_key = int(client_socket.recv(1024).decode())
-            
+
             shared_secret = compute_shared_secret(client_public_key, self.private_key, P)
 
             # Derive AES key from shared secret
             aes_key, _ = derive_key(str(shared_secret), b'fixed_salt_1234')
 
+            """Debugging
             print(f"[DH] Server public key: {self.public_key}")
             print(f"[DH] Server computed shared secret: {shared_secret}")
             print(f"[DH] Server AES key: {aes_key}")
             print(f"[DH] Server P: {P}, G: {G}")
             print(f"[DH] Client public key (received): {client_public_key}")
             print(f"[DH] Server private key: {self.private_key}")
+            """
 
             name = client_socket.recv(1024).decode().strip()
             self.clients[name] = (client_socket, aes_key)
@@ -89,7 +91,17 @@ class ChatServer:
 
                 decrypted_message = self.decrypt(encrypted_data.decode(), aes_key)
                 self.text_area.insert(tk.END, f"[{name}] {decrypted_message}\n")
-                self.broadcast(f"[{name}]: {decrypted_message}", exclude=name)
+
+                if decrypted_message == "/users":
+                    self.user_list(aes_key, client_socket)
+
+                # Handle @private messages
+                elif decrypted_message.startswith("@"):
+                    self.private_message(decrypted_message, name, client_socket, aes_key)
+
+                # Broadcast messages
+                else:
+                    self.broadcast(f"[{name}]: {decrypted_message}", exclude=name)
 
         finally:
             self.clients.pop(name, None)
@@ -100,6 +112,32 @@ class ChatServer:
 
     def decrypt(self, encrypted_message, key):
         return aes_decrypt(encrypted_message, key)
+    
+    def user_list(self, aes_key, client_socket):
+        user_list = "Utilisateurs connectés: " + ", ".join(self.clients.keys())
+        encrypted_response = self.encrypt(user_list, aes_key)
+        client_socket.send(encrypted_response.encode())
+
+    def private_message(self, decrypted_message, name, client_socket, aes_key):
+        try:
+            # Split target and message (handle missing space)
+            parts = decrypted_message[1:].split(" ", 1)
+
+            if len(parts) < 2:
+                raise ValueError("Invalid private message format")
+            target, msg = parts[0], parts[1]
+
+            if target in self.clients:
+                target_socket, target_key = self.clients[target]
+                encrypted_msg = self.encrypt(f"[Private] {name}: {msg}", target_key)
+                target_socket.send(encrypted_msg.encode())
+
+            else:
+                error_msg = self.encrypt(f"User {target} not found.", aes_key)
+                client_socket.send(error_msg.encode())
+
+        except Exception as e:
+            self.text_area.insert(tk.END, f"[-] Private message error: {e}\n")
 
     def broadcast(self, message, exclude=None):
         for client_name, (sock, key) in self.clients.items():

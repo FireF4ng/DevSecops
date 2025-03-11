@@ -58,12 +58,14 @@ class ChatClient:
             # Derive AES key from shared secret
             self.aes_key, _ = derive_key(str(shared_secret), b'fixed_salt_1234')
 
+            """Debugging
             print(f"[DH] Client public key: {self.public_key}")
             print(f"[DH] Client computed shared secret: {shared_secret}")
             print(f"[DH] Client AES key: {self.aes_key}")
             print(f"[DH] Client P: {server_P}, G: {server_G}")
             print(f"[DH] Server public key (received): {server_public_key}")
-            print(f"[DH] Client private key: {self.private_key}")
+            print(f"[DH] Client private key: {self.private_key}")"
+            """
 
             self.name = simpledialog.askstring("Username", "Enter your username:", parent=self.root)
             self.client_socket.send(self.name.encode())
