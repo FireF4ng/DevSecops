@@ -78,6 +78,9 @@ class ChatServer:
                 if not encrypted_data:
                     break
 
+                # Log the encrypted data for debugging
+                self.text_area.insert(tk.END, f"[Encrypted Data] {encrypted_data}\n")
+
                 decrypted_message = self.decrypt(encrypted_data.decode(), aes_key)
                 self.text_area.insert(tk.END, f"[{name}] {decrypted_message}\n")
                 self.broadcast(f"[{name}]: {decrypted_message}", exclude=name)

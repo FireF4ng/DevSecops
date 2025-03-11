@@ -31,14 +31,14 @@ class MITMProxy:
                 data = source.recv(1024)
                 if not data:
                     break
-                self.log(f"[MITM] {name} -> {data.decode()}")
+                self.log(f"[MITM] {name} -> Raw Data: {data}")
                 destination.send(data)
         except Exception as e:
             self.log(f"[MITM] Connection error ({name}): {e}")
         finally:
             source.close()
             destination.close()
-
+    
     def handle_client(self, client_socket):
         try:
             # Connect to the actual server
@@ -46,6 +46,12 @@ class MITMProxy:
             server_socket.connect((SERVER_HOST, SERVER_PORT))
 
             self.log("[MITM] Connection established between client and server.")
+
+            # Relay DH parameters and keys
+            dh_params = client_socket.recv(1024)
+            server_socket.send(dh_params)
+            client_public_key = server_socket.recv(1024)
+            client_socket.send(client_public_key)
 
             # Start bidirectional relay
             threading.Thread(target=self.relay, args=(client_socket, server_socket, "Client -> Server"), daemon=True).start()

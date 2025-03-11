@@ -5,9 +5,12 @@ from tkinter import scrolledtext, simpledialog
 from crypto import aes_encrypt, aes_decrypt, derive_key, generate_dh_keys, compute_shared_secret
 
 class ChatClient:
-    def __init__(self, host="127.0.0.1", port=5555):
+    def __init__(self, host="127.0.0.1", server_port=12345, mitm_port=5555):
         self.host = host
-        self.port = port
+        self.server_port = server_port
+        self.mitm_port = mitm_port
+        self.used_port = None
+
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # GUI setup
@@ -28,25 +31,34 @@ class ChatClient:
 
     def connect(self):
         try:
-            self.client_socket.connect((self.host, self.port))
-
+            # Try connecting to MITM proxy first
+            self.client_socket.connect((self.host, self.mitm_port))
+            self.used_port = self.mitm_port
+        except ConnectionRefusedError:
+            # Fall back to direct connection to the server
+            self.client_socket.close()
+            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.client_socket.connect((self.host, self.server_port))
+            self.used_port = self.server_port
+    
+        try:
             # Receive DH parameters and server public key
             dh_params = self.client_socket.recv(1024).decode().split(",")
             P, G, server_public_key = int(dh_params[0]), int(dh_params[1]), int(dh_params[2])
-
+    
             # Generate DH key pair and compute shared secret
             self.private_key, self.public_key = generate_dh_keys()
             self.client_socket.send(str(self.public_key).encode())
             shared_secret = compute_shared_secret(server_public_key, self.private_key)
-
+    
             # Derive AES key from shared secret
             self.aes_key, _ = derive_key(str(shared_secret), b'fixed_salt_1234')
-
+    
             self.name = simpledialog.askstring("Username", "Enter your username:", parent=self.root)
             self.client_socket.send(self.name.encode())
-
-            self.text_area.insert(tk.END, f"[+] Connected to server [{self.host}:{self.port}]\n")
-
+    
+            self.text_area.insert(tk.END, f"[+] Connected to server [{self.host}:{self.used_port}]\n")
+    
             self.receive_thread = tk_threading.Thread(target=self.receive_messages, daemon=True)
             self.receive_thread.start()
         except Exception as e:
