@@ -70,6 +70,8 @@ class ChatClient:
 
             self.name = simpledialog.askstring("Username", "Enter your username:", parent=self.root)
             self.client_socket.send(self.name.encode())
+            
+            self.root.title(f"Client - {self.name}")
 
             self.text_area.insert(tk.END, f"[+] Connected to server [{self.host}:{self.used_port}]\n")
 
