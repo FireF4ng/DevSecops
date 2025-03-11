@@ -2,10 +2,9 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog, Frame, LEFT
-from crypto import aes_encrypt, aes_decrypt, derive_key, generate_dh_keys, compute_shared_secret
+from crypto import aes_encrypt, aes_decrypt, derive_key, generate_dh_keys, compute_shared_secret, P, G
+import time
 
-P = 23  # Prime number
-G = 5   # Generator
 
 class ChatServer:
     def __init__(self, host="0.0.0.0", port=12345):
@@ -15,7 +14,8 @@ class ChatServer:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # Diffie-Hellman key pair
-        self.private_key, self.public_key = generate_dh_keys()
+        self.private_key, self.public_key = generate_dh_keys(P, G)
+        print(f"[DH] Server P: {P}, G: {G}, private key: {self.private_key}, public key: {self.public_key}")
 
         # GUI setup
         self.root = tk.Tk()
@@ -61,13 +61,22 @@ class ChatServer:
         try:
             # Send DH parameters and server public key
             client_socket.send(f"{P},{G},{self.public_key}".encode())
+            time.sleep(0.1)
 
             # Receive client's public key and compute shared secret
             client_public_key = int(client_socket.recv(1024).decode())
-            shared_secret = compute_shared_secret(client_public_key, self.private_key)
+            
+            shared_secret = compute_shared_secret(client_public_key, self.private_key, P)
 
             # Derive AES key from shared secret
             aes_key, _ = derive_key(str(shared_secret), b'fixed_salt_1234')
+
+            print(f"[DH] Server public key: {self.public_key}")
+            print(f"[DH] Server computed shared secret: {shared_secret}")
+            print(f"[DH] Server AES key: {aes_key}")
+            print(f"[DH] Server P: {P}, G: {G}")
+            print(f"[DH] Client public key (received): {client_public_key}")
+            print(f"[DH] Server private key: {self.private_key}")
 
             name = client_socket.recv(1024).decode().strip()
             self.clients[name] = (client_socket, aes_key)
@@ -77,9 +86,6 @@ class ChatServer:
                 encrypted_data = client_socket.recv(1024)
                 if not encrypted_data:
                     break
-
-                # Log the encrypted data for debugging
-                self.text_area.insert(tk.END, f"[Encrypted Data] {encrypted_data}\n")
 
                 decrypted_message = self.decrypt(encrypted_data.decode(), aes_key)
                 self.text_area.insert(tk.END, f"[{name}] {decrypted_message}\n")
@@ -102,7 +108,6 @@ class ChatServer:
 
     def server_send_message(self):
         message = self.input_box.get()
-        self.text_area.insert(tk.END, f"[Server]: {message}\n")
         self.broadcast(f"[Server]: {message}")
         self.input_box.delete(0, tk.END)
 
@@ -116,6 +121,7 @@ class ChatServer:
         while True:
             client_socket, addr = self.server_socket.accept()
             threading.Thread(target=self.handle_client, args=(client_socket, addr), daemon=True).start()
+
 
 if __name__ == "__main__":
     server = ChatServer()

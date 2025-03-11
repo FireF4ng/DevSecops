@@ -7,16 +7,22 @@ import base64
 import random
 
 # Diffie-Hellman parameters
-P = 23  # Prime number
-G = 5   # Generator
+P = int(
+    "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1"
+    "29024E088A67CC74020BBEA63B139B22514A08798E3404DD"
+    "EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245"
+    "E485B576625E7EC6F44C42E9A63A36210000000000090563",
+    16
+)
+G = 2
 
-def generate_dh_keys():
+def generate_dh_keys(P, G):
     """Generates a private and public key for Diffie-Hellman."""
     private_key = random.randint(2, P - 2)
     public_key = pow(G, private_key, P)
     return private_key, public_key
 
-def compute_shared_secret(private_key, received_public_key):
+def compute_shared_secret(received_public_key, private_key, P):
     """Computes the shared secret using Diffie-Hellman."""
     return pow(received_public_key, private_key, P)
 

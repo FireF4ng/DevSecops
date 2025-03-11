@@ -3,6 +3,8 @@ import tkinter as tk
 import threading as tk_threading
 from tkinter import scrolledtext, simpledialog
 from crypto import aes_encrypt, aes_decrypt, derive_key, generate_dh_keys, compute_shared_secret
+import time
+
 
 class ChatClient:
     def __init__(self, host="127.0.0.1", server_port=12345, mitm_port=5555):
@@ -40,25 +42,34 @@ class ChatClient:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect((self.host, self.server_port))
             self.used_port = self.server_port
-    
+
         try:
             # Receive DH parameters and server public key
             dh_params = self.client_socket.recv(1024).decode().split(",")
-            P, G, server_public_key = int(dh_params[0]), int(dh_params[1]), int(dh_params[2])
-    
+            server_P, server_G, server_public_key = int(dh_params[0]), int(dh_params[1]), int(dh_params[2])
+
             # Generate DH key pair and compute shared secret
-            self.private_key, self.public_key = generate_dh_keys()
+            self.private_key, self.public_key = generate_dh_keys(server_P, server_G)
+
             self.client_socket.send(str(self.public_key).encode())
-            shared_secret = compute_shared_secret(server_public_key, self.private_key)
-    
+            time.sleep(0.1)
+            shared_secret = compute_shared_secret(server_public_key, self.private_key, server_P)
+
             # Derive AES key from shared secret
             self.aes_key, _ = derive_key(str(shared_secret), b'fixed_salt_1234')
-    
+
+            print(f"[DH] Client public key: {self.public_key}")
+            print(f"[DH] Client computed shared secret: {shared_secret}")
+            print(f"[DH] Client AES key: {self.aes_key}")
+            print(f"[DH] Client P: {server_P}, G: {server_G}")
+            print(f"[DH] Server public key (received): {server_public_key}")
+            print(f"[DH] Client private key: {self.private_key}")
+
             self.name = simpledialog.askstring("Username", "Enter your username:", parent=self.root)
             self.client_socket.send(self.name.encode())
-    
+
             self.text_area.insert(tk.END, f"[+] Connected to server [{self.host}:{self.used_port}]\n")
-    
+
             self.receive_thread = tk_threading.Thread(target=self.receive_messages, daemon=True)
             self.receive_thread.start()
         except Exception as e:
@@ -102,6 +113,7 @@ class ChatClient:
     def close_connection(self):
         self.client_socket.close()
         self.root.destroy()
+
 
 if __name__ == "__main__":
     client = ChatClient()
