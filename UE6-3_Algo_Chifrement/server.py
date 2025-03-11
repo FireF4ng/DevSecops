@@ -2,18 +2,24 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog, Frame, LEFT
-from crypto import aes_encrypt, aes_decrypt, derive_key
+from crypto import aes_encrypt, aes_decrypt, derive_key, generate_dh_keys, compute_shared_secret
+
+P = 23  # Prime number
+G = 5   # Generator
 
 class ChatServer:
-    def __init__(self, host="0.0.0.0", port=12345, use_aes=True):
+    def __init__(self, host="0.0.0.0", port=12345):
         self.host = host
         self.port = port
         self.clients = {}
-        self.use_aes = use_aes  # AES by default
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+        # Diffie-Hellman key pair
+        self.private_key, self.public_key = generate_dh_keys()
+
+        # GUI setup
         self.root = tk.Tk()
-        self.root.title("Serveur")
+        self.root.title("Server")
 
         self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD)
         self.text_area.pack()
@@ -21,44 +27,47 @@ class ChatServer:
         self.input_box = tk.Entry(self.root)
         self.input_box.pack()
 
-        self.send_button = tk.Button(self.root, text="Envoyer", command=self.server_send_message)
+        self.send_button = tk.Button(self.root, text="Send", command=self.server_send_message)
         self.send_button.pack()
 
         buttons = Frame(self.root)
         buttons.pack()
 
-        users_button = tk.Button(self.root, text="Liste des utilisateurs", command=self.users)
-        users_button.pack(in_=buttons, side=LEFT)
+        users_button = tk.Button(buttons, text="User List", command=self.users)
+        users_button.pack(side=LEFT)
 
-        kick_button = tk.Button(self.root, text="Kick User", command=self.kick)
-        kick_button.pack(in_=buttons, side=LEFT)
+        kick_button = tk.Button(buttons, text="Kick User", command=self.kick)
+        kick_button.pack(side=LEFT)
 
     def users(self):
-        user_list = "Utilisateurs connectés: " + ", ".join(self.clients.keys())
-        self.text_area.insert(tk.END, f"[Serveur]: {user_list}\n")
+        user_list = "Connected users: " + ", ".join(self.clients.keys())
+        self.text_area.insert(tk.END, f"[Server]: {user_list}\n")
 
     def kick(self):
         target = simpledialog.askstring("Kick", "Enter username:", parent=self.root)
         if target in self.clients:
             target_socket, target_key = self.clients[target]
             try:
-                # Encrypt kick message before sending
                 kick_msg = self.encrypt("You have been kicked.", target_key)
                 target_socket.send(kick_msg.encode())
                 target_socket.close()
             except:
                 pass
             del self.clients[target]
-            self.text_area.insert(tk.END, f"[Server] Kicked {target}\n")
-        else:
-            self.text_area.insert(tk.END, f"[Server] User {target} not found.\n")
+            self.broadcast(f"[Server]: Kicked {target}")
 
     def handle_client(self, client_socket, addr):
+        name = None
         try:
-            # Key derivation with FIXED salt
-            key_str = "shared_secret"
-            salt = b'fixed_salt_1234'  # Must match client's salt
-            aes_key, _ = derive_key(key_str, salt)
+            # Send DH parameters and server public key
+            client_socket.send(f"{P},{G},{self.public_key}".encode())
+
+            # Receive client's public key and compute shared secret
+            client_public_key = int(client_socket.recv(1024).decode())
+            shared_secret = compute_shared_secret(client_public_key, self.private_key)
+
+            # Derive AES key from shared secret
+            aes_key, _ = derive_key(str(shared_secret), b'fixed_salt_1234')
 
             name = client_socket.recv(1024).decode().strip()
             self.clients[name] = (client_socket, aes_key)
@@ -69,50 +78,11 @@ class ChatServer:
                 if not encrypted_data:
                     break
 
-                try:
-                    # Decrypt the message
-                    decrypted_message = self.decrypt(encrypted_data.decode(), aes_key)
-                    self.text_area.insert(tk.END, f"[{name}] {decrypted_message}\n")
+                decrypted_message = self.decrypt(encrypted_data.decode(), aes_key)
+                self.text_area.insert(tk.END, f"[{name}] {decrypted_message}\n")
+                self.broadcast(f"[{name}]: {decrypted_message}", exclude=name)
 
-                    # Handle /users command
-                    if decrypted_message == "/users":
-                        user_list = "Utilisateurs connectés: " + ", ".join(self.clients.keys())
-                        encrypted_response = self.encrypt(user_list, aes_key)
-                        client_socket.send(encrypted_response.encode())
-
-                    # Handle @private messages
-                    elif decrypted_message.startswith("@"):
-                        try:
-                            # Split target and message (handle missing space)
-                            parts = decrypted_message[1:].split(" ", 1)
-                            if len(parts) < 2:
-                                raise ValueError("Invalid private message format")
-                            target, msg = parts[0], parts[1]
-
-                            if target in self.clients:
-                                target_socket, target_key = self.clients[target]
-                                encrypted_msg = self.encrypt(f"[Private] {name}: {msg}", target_key)
-                                target_socket.send(encrypted_msg.encode())
-                            else:
-                                error_msg = self.encrypt(f"User {target} not found.", aes_key)
-                                client_socket.send(error_msg.encode())
-                        except Exception as e:
-                            self.text_area.insert(tk.END, f"[-] Private message error: {e}\n")
-
-                    # Broadcast messages
-                    else:
-                        for client_name, (sock, key) in self.clients.items():
-                            if client_name != name:
-                                encrypted_msg = self.encrypt(f"[{name}]: {decrypted_message}", key)
-                                sock.send(encrypted_msg.encode())
-
-                except Exception as e:
-                    self.text_area.insert(tk.END, f"[-] Decryption error: {e}\n")
-
-        except Exception as e:
-            self.text_area.insert(tk.END, f"[-] Client error: {e}\n")
         finally:
-            self.text_area.insert(tk.END, f"[-] {name} déconnecté\n")
             self.clients.pop(name, None)
             client_socket.close()
 
@@ -122,17 +92,20 @@ class ChatServer:
     def decrypt(self, encrypted_message, key):
         return aes_decrypt(encrypted_message, key)
 
+    def broadcast(self, message, exclude=None):
+        for client_name, (sock, key) in self.clients.items():
+            if client_name != exclude:
+                sock.send(self.encrypt(message, key).encode())
+
     def server_send_message(self):
         message = self.input_box.get()
-        self.text_area.insert(tk.END, f"[Serveur]: {message}\n")
-        for client_name, (client_socket, client_key) in self.clients.items():
-            client_socket.send(self.encrypt(f"[Serveur]: {message}", client_key).encode())
+        self.text_area.insert(tk.END, f"[Server]: {message}\n")
+        self.broadcast(f"[Server]: {message}")
         self.input_box.delete(0, tk.END)
 
     def start(self):
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
-
         threading.Thread(target=self.accept_connections, daemon=True).start()
         self.root.mainloop()
 
@@ -142,5 +115,5 @@ class ChatServer:
             threading.Thread(target=self.handle_client, args=(client_socket, addr), daemon=True).start()
 
 if __name__ == "__main__":
-    server = ChatServer(use_aes=True)
+    server = ChatServer()
     server.start()
