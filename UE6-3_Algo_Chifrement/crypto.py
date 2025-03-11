@@ -1,30 +1,10 @@
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
-import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import base64
-import random
-
-# Diffie-Hellman parameters
-P = int(
-    "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1"
-    "29024E088A67CC74020BBEA63B139B22514A08798E3404DD"
-    "EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245"
-    "E485B576625E7EC6F44C42E9A63A36210000000000090563",
-    16
-)
-G = 2
-
-def generate_dh_keys(P, G):
-    """Generates a private and public key for Diffie-Hellman."""
-    private_key = random.randint(2, P - 2)
-    public_key = pow(G, private_key, P)
-    return private_key, public_key
-
-def compute_shared_secret(received_public_key, private_key, P):
-    """Computes the shared secret using Diffie-Hellman."""
-    return pow(received_public_key, private_key, P)
+import os
 
 # AES key generation
 def derive_key(password: str, salt: bytes = None) -> tuple[bytes, bytes]:
@@ -83,3 +63,38 @@ def aes_decrypt(ciphertext: str, key: bytes) -> str:
 
     except (ValueError, IndexError, TypeError) as e:
         raise Exception(f"Decryption failed: {str(e)}")
+
+# RSA Key Generation
+def generate_rsa_keys() -> tuple:
+    """Generates a RSA public/private key pair."""
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+    public_key = private_key.public_key()
+    return private_key, public_key
+
+# RSA Encryption
+def rsa_encrypt(public_key, data: bytes) -> bytes:
+    """Encrypt data using RSA public key."""
+    return public_key.encrypt(
+        data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+# RSA Decryption
+def rsa_decrypt(private_key, encrypted_data: bytes) -> bytes:
+    """Decrypt data using RSA private key."""
+    return private_key.decrypt(
+        encrypted_data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )

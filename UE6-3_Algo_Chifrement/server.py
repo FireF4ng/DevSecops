@@ -2,8 +2,8 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog, Frame, LEFT
-from crypto import aes_encrypt, aes_decrypt, derive_key, generate_dh_keys, compute_shared_secret, P, G
-import time
+from crypto import aes_encrypt, aes_decrypt, derive_key, generate_rsa_keys, rsa_encrypt
+from cryptography.hazmat.primitives import serialization
 
 
 class ChatServer:
@@ -13,9 +13,10 @@ class ChatServer:
         self.clients = {}
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        # Diffie-Hellman key pair
-        self.private_key, self.public_key = generate_dh_keys(P, G)
-        print(f"[DH] Server P: {P}, G: {G}, private key: {self.private_key}, public key: {self.public_key}")
+        # Generate RSA keys
+        self.private_key, self.public_key = generate_rsa_keys()
+
+        print(f"[RSA] Server Public Key: {self.public_key}")
 
         # GUI setup
         self.root = tk.Tk()
@@ -59,28 +60,35 @@ class ChatServer:
     def handle_client(self, client_socket, addr):
         name = None
         try:
-            # Send DH parameters and server public key
-            client_socket.send(f"{P},{G},{self.public_key}".encode())
-            time.sleep(0.1)
+            # Send server's RSA public key to client in PEM format
+            client_socket.send(self.public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ))
 
-            # Receive client's public key and compute shared secret
-            client_public_key = int(client_socket.recv(1024).decode())
+            # Receive the client's public key
+            client_public_key_data = client_socket.recv(1024)
+            client_public_key = serialization.load_pem_public_key(client_public_key_data)
 
-            shared_secret = compute_shared_secret(client_public_key, self.private_key, P)
+            # Generate a shared AES key (this can be done by any method, here we'll just derive it)
+            aes_key, _ = derive_key("shared_secret", b'fixed_salt_1234')
 
-            # Derive AES key from shared secret
-            aes_key, _ = derive_key(str(shared_secret), b'fixed_salt_1234')
+            # Encrypt AES key with client's public RSA key
+            encrypted_aes_key = rsa_encrypt(client_public_key, aes_key)
 
-            """Debugging
-            print(f"[DH] Server public key: {self.public_key}")
-            print(f"[DH] Server computed shared secret: {shared_secret}")
-            print(f"[DH] Server AES key: {aes_key}")
-            print(f"[DH] Server P: {P}, G: {G}")
-            print(f"[DH] Client public key (received): {client_public_key}")
-            print(f"[DH] Server private key: {self.private_key}")
-            """
+            # Send encrypted AES key to client
+            client_socket.send(encrypted_aes_key)
 
-            name = client_socket.recv(1024).decode().strip()
+            try:
+                name = client_socket.recv(1024).decode('utf-8').strip()
+            except UnicodeDecodeError:
+                self.text_area.insert(tk.END, f"[-] Username decoding failed\n")
+                return
+
+            # Now, we should be sure the username is received properly.
+            if not name:
+                raise ValueError("Username cannot be empty or None.")
+
             self.clients[name] = (client_socket, aes_key)
             self.text_area.insert(tk.END, f"[+] {name} connected from {addr}\n")
 
@@ -112,7 +120,7 @@ class ChatServer:
 
     def decrypt(self, encrypted_message, key):
         return aes_decrypt(encrypted_message, key)
-    
+
     def user_list(self, aes_key, client_socket):
         user_list = "Connected Users: " + ", ".join(self.clients.keys())
         encrypted_response = self.encrypt(user_list, aes_key)
