@@ -60,34 +60,30 @@ class ChatServer:
     def handle_client(self, client_socket, addr):
         name = None
         try:
-            # Send server's RSA public key to client in PEM format
+            # Send server's RSA public key
             client_socket.send(self.public_key.public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ))
 
-            # Receive the client's public key
+            # Receive client's public key
             client_public_key_data = client_socket.recv(1024)
             client_public_key = serialization.load_pem_public_key(client_public_key_data)
 
-            # Generate a shared AES key (this can be done by any method, here we'll just derive it)
+            # Generate and send AES key
             aes_key, _ = derive_key("shared_secret", b'fixed_salt_1234')
-
-            # Encrypt AES key with client's public RSA key
             encrypted_aes_key = rsa_encrypt(client_public_key, aes_key)
-
-            # Send encrypted AES key to client
             client_socket.send(encrypted_aes_key)
 
-            try:
-                name = client_socket.recv(1024).decode('utf-8').strip()
-            except UnicodeDecodeError:
-                self.text_area.insert(tk.END, f"[-] Username decoding failed\n")
-                return
+            # Read client's AES key confirmation (previously missing)
+            client_confirmation = client_socket.recv(1024) # DO NOT REMOVE THIS LINE
 
-            # Now, we should be sure the username is received properly.
+            # Now receive the username
+            name_data = client_socket.recv(1024)  # Use a separate recv for username
+            name = name_data.decode('utf-8').strip()
+
             if not name:
-                raise ValueError("Username cannot be empty or None.")
+                raise ValueError("Username is empty")
 
             self.clients[name] = (client_socket, aes_key)
             self.text_area.insert(tk.END, f"[+] {name} connected from {addr}\n")
