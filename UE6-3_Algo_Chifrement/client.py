@@ -24,7 +24,7 @@ class ChatClient:
         self.root = tk.Tk()
         self.root.title("Client")
 
-        self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD)
+        self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, state=tk.DISABLED)
         self.text_area.pack()
 
         self.input_box = tk.Entry(self.root)
@@ -35,6 +35,13 @@ class ChatClient:
 
         users_button = tk.Button(self.root, text="Users List", command=self.request_users)
         users_button.pack()
+
+    def insert_text(self, text):
+        self.text_area.config(state=tk.NORMAL)  # Enable editing
+        self.text_area.insert(tk.END, text + "\n")  # Insert text
+        self.text_area.config(state=tk.DISABLED)  # Disable editing
+        self.text_area.see(tk.END)  # Auto-scroll to the end
+
 
     def connect(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -67,12 +74,12 @@ class ChatClient:
 
             self.root.title(f"Client - {self.name}")
 
-            self.text_area.insert(tk.END, f"[+] Connected to server [{self.host}:{self.server_port}]\n")
+            self.insert_text(f"[+] Connected to server [{self.host}:{self.server_port}]")
 
             self.receive_thread = tk_threading.Thread(target=self.receive_messages, daemon=True)
             self.receive_thread.start()
         except Exception as e:
-            self.text_area.insert(tk.END, f"[-] Connection Error: {e}\n")
+            self.insert_text(f"[-] Connection Error: {e}")
             self.client_socket.close()
 
     def encrypt(self, message):
@@ -84,7 +91,7 @@ class ChatClient:
     def send_message(self):
         message = self.input_box.get()
         if message:
-            self.text_area.insert(tk.END, f"[{self.name}/Me]: {message}\n")
+            self.insert_text(f"[{self.name}/Me]: {message}")
             encrypted_message = self.encrypt(message)
             self.client_socket.send(encrypted_message.encode())
             self.input_box.delete(0, tk.END)
@@ -94,17 +101,17 @@ class ChatClient:
             try:
                 encrypted_message = self.client_socket.recv(1024).decode()
                 if not encrypted_message:
-                    self.text_area.insert(tk.END, "[Info] Disconnected\n")
+                    self.insert_text("[Info] Disconnected")
                     break
                 msg = self.decrypt(encrypted_message)
-                self.text_area.insert(tk.END, f"{msg}\n")
+                self.insert_text(f"{msg}")
             except socket.error as e:
                 if e.errno == errno.WSAECONNRESET:  # WinError 10054
-                    self.text_area.insert(tk.END, "[Warning] Client connection forcibly closed\n")
+                    self.insert_text("[Warning] Client connection forcibly closed")
                     break
-                self.text_area.insert(tk.END, f"[Error] Socket error: {e}\n")
+                self.insert_text(f"[Error] Socket error: {e}")
             except Exception as e:
-                self.text_area.insert(tk.END, f"[Error] Failed to decrypt: {e}\n")
+                self.insert_text(f"[Error] Failed to decrypt: {e}")
 
     def request_users(self):
         encrypted_command = self.encrypt("/users")

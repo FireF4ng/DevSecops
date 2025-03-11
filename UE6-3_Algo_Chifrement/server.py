@@ -1,4 +1,5 @@
 import socket
+import errno
 import threading
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog, Frame, LEFT
@@ -16,13 +17,11 @@ class ChatServer:
         # Generate RSA keys
         self.private_key, self.public_key = generate_rsa_keys()
 
-        print(f"[RSA] Server Public Key: {self.public_key}")
-
         # GUI setup
         self.root = tk.Tk()
         self.root.title("Server")
 
-        self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD)
+        self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, state=tk.DISABLED)
         self.text_area.pack()
 
         self.input_box = tk.Entry(self.root)
@@ -40,9 +39,16 @@ class ChatServer:
         kick_button = tk.Button(buttons, text="Kick User", command=self.kick)
         kick_button.pack(side=LEFT)
 
+    # Function to insert text and auto-scroll
+    def insert_text(self, text):
+        self.text_area.config(state=tk.NORMAL)  # Enable editing
+        self.text_area.insert(tk.END, text + "\n")  # Insert text
+        self.text_area.config(state=tk.DISABLED)  # Disable editing
+        self.text_area.see(tk.END)  # Auto-scroll to the end
+
     def users(self):
         user_list = "Connected users: " + ", ".join(self.clients.keys())
-        self.text_area.insert(tk.END, f"[Server]: {user_list}\n")
+        self.insert_text(f"[Server]: {user_list}")
 
     def kick(self):
         target = simpledialog.askstring("Kick", "Enter username:", parent=self.root)
@@ -86,15 +92,22 @@ class ChatServer:
                 raise ValueError("Username is empty")
 
             self.clients[name] = (client_socket, aes_key)
-            self.text_area.insert(tk.END, f"[+] {name} connected from {addr}\n")
+            self.insert_text(f"[+] {name} connected from {addr}")
 
             while True:
-                encrypted_data = client_socket.recv(1024)
-                if not encrypted_data:
-                    break
+                try:
+                    encrypted_data = client_socket.recv(1024)
+                    if not encrypted_data:
+                        self.insert_text(f"[Info] {name} Disconnected")
+                        break
+                    decrypted_message = self.decrypt(encrypted_data.decode(), aes_key)
+                    self.insert_text(f"[{name}] {decrypted_message}")
 
-                decrypted_message = self.decrypt(encrypted_data.decode(), aes_key)
-                self.text_area.insert(tk.END, f"[{name}] {decrypted_message}\n")
+                except socket.error as e:
+                    if e.errno == errno.WSAECONNRESET:  # WinError 10054
+                        self.insert_text(f"[Info] {name}'s connection forcibly closed")
+                        break
+                    self.insert_text(f"[Error] Socket error: {e}")
 
                 if decrypted_message == "/users":
                     self.user_list(aes_key, client_socket)
@@ -141,7 +154,7 @@ class ChatServer:
                 client_socket.send(error_msg.encode())
 
         except Exception as e:
-            self.text_area.insert(tk.END, f"[-] Private message error: {e}\n")
+            self.insert_text(f"[-] Private message error: {e}")
 
     def broadcast(self, message, exclude=None):
         for client_name, (sock, key) in self.clients.items():
@@ -150,7 +163,7 @@ class ChatServer:
 
     def server_send_message(self):
         message = self.input_box.get()
-        self.text_area.insert(tk.END, f"[Server]: {message}\n")
+        self.insert_text(f"[Server]: {message}")
         self.broadcast(f"[Server]: {message}")
         self.input_box.delete(0, tk.END)
 
