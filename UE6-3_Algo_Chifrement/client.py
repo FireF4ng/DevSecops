@@ -14,13 +14,13 @@ class ChatClient:
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # RSA keys
-        self.private_key, self.public_key = generate_rsa_keys()  # Generate RSA key pair
+        self.private_key, self.public_key = generate_rsa_keys()
         self.pem_public_key = self.public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
 
-        # GUI setup
+        # GUI
         self.root = tk.Tk()
         self.root.title("Client")
 
@@ -67,7 +67,7 @@ class ChatClient:
             # Send the encrypted AES key back to the server
             self.client_socket.send(encrypted_aes_key_back)
 
-            # Ask for username
+            # Ask username
             self.name = simpledialog.askstring("Username", "Enter your username:", parent=self.root)
             if self.name:  # Ensure username is not None
                 self.client_socket.send(self.name.encode('utf-8'))

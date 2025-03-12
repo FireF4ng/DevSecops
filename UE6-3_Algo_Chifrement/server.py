@@ -17,7 +17,7 @@ class ChatServer:
         # Generate RSA keys
         self.private_key, self.public_key = generate_rsa_keys()
 
-        # GUI setup
+        # GUI
         self.root = tk.Tk()
         self.root.title("Server")
 
@@ -81,11 +81,11 @@ class ChatServer:
             encrypted_aes_key = rsa_encrypt(client_public_key, aes_key)
             client_socket.send(encrypted_aes_key)
 
-            # Read client's AES key confirmation (previously missing)
+            # Read client's AES key confirmation
             client_confirmation = client_socket.recv(1024) # DO NOT REMOVE THIS LINE
 
             # Now receive the username
-            name_data = client_socket.recv(1024)  # Use a separate recv for username
+            name_data = client_socket.recv(1024)
             name = name_data.decode('utf-8').strip()
 
             if not name:
@@ -112,7 +112,7 @@ class ChatServer:
                 if decrypted_message == "/users":
                     self.user_list(aes_key, client_socket)
 
-                # Handle @private messages
+                # @private messages
                 elif decrypted_message.startswith("@"):
                     self.private_message(decrypted_message, name, client_socket, aes_key)
 
@@ -137,7 +137,7 @@ class ChatServer:
 
     def private_message(self, decrypted_message, name, client_socket, aes_key):
         try:
-            # Split target and message (handle missing space)
+            # Split target and message
             parts = decrypted_message[1:].split(" ", 1)
 
             if len(parts) < 2:
