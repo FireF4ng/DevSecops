@@ -1,6 +1,6 @@
-# DevSecOps
+# RawPronote
 
-DevSecOps est une application web permettant aux élèves et aux professeurs de gérer leurs emplois du temps, leurs notes et la communication avec l'administration. L'application utilise **Flask** comme framework backend et propose une interface dynamique en **HTML/CSS/JS**.
+RawPronote est une application web permettant aux élèves et aux professeurs de gérer leurs emplois du temps, leurs notes et la communication avec l'administration. L'application utilise **Flask** comme framework backend et propose une interface dynamique en **HTML/CSS/JS**.
 
 ## 📂 Structure du projet
 
